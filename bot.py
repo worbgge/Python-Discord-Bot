@@ -28,7 +28,7 @@ load_dotenv()
 TOKEN=os.getenv('DISCORD_TOKEN')
 GUILD=os.getenv('DISCORD_GUILD')
 
-client=discord.Client(command_prefix='!',intents=discord.Intents.all())
+client=discord.Client(intents=discord.Intents.all())
 bot=commands.Bot(command_prefix='!',intents=discord.Intents.all())
 
 @client.event
@@ -54,8 +54,8 @@ async def on_member_join(member):
     poppins_small=Font.poppins(size=30,variant="bold")
     background.paste(profile,(325,90))
     background.ellipse((325,90),150,150,outline="white",stroke_width=5)
-    background.text((400,260),f"Welcome {member.name}",font=poppins, color="white", align="center")
-    background.text((400,325),"Lets get fish grooving!",font=poppins_small, color="white", align="center")
+    background.text((400,260),f"Welcome {member.name}",font=poppins, color="white", align="center",stroke_width="2",stroke_fill="black")
+    background.text((400,325),"Lets get fish grooving!",font=poppins_small, color="white", align="center",stroke_width="2",stroke_fill="black")
     file=File(fp=background.image_bytes,filename="1690987294635472.png")
     await channel.send(file=file)
 
