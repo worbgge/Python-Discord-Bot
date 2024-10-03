@@ -6,22 +6,17 @@ import aiosqlite,discord,asyncio,random
 from discord import File
 from discord.ext import commands,tasks
 from dotenv import load_dotenv
-from easy_pil import Editor,load_image_async,Font,Text
+from easy_pil import Editor,Canvas,load_image_async,Font,Text
 
 ### LOGGING ###
 
-logger = logging.getLogger('discord')
+logger=logging.getLogger('discord')
 logger.setLevel(logging.DEBUG)
 logging.getLogger('discord.http').setLevel(logging.INFO)
 
-handler = logging.handlers.RotatingFileHandler(
-    filename='discord.log',
-    encoding='utf-8',
-    maxBytes=32 * 1024 * 1024,  # 32 MiB
-    backupCount=5,  # Rotate through 5 files
-)
-dt_fmt = '%Y-%m-%d %H:%M:%S'
-formatter = logging.Formatter('[{asctime}] [{levelname:<8}] {name}: {message}', dt_fmt, style='{')
+handler=logging.handlers.RotatingFileHandler(filename='discord.log',encoding='utf-8',maxBytes=32*1024*1024,backupCount=5,)
+dt_fmt='%Y-%m-%d %H:%M:%S'
+formatter=logging.Formatter('[{asctime}] [{levelname:<8}] {name}: {message}',dt_fmt,style='{')
 handler.setFormatter(formatter)
 logger.addHandler(handler)
 
@@ -29,7 +24,6 @@ load_dotenv()
 TOKEN=os.getenv('DISCORD_TOKEN')
 GUILD=os.getenv('DISCORD_GUILD')
 
-#client=discord.Client(intents=discord.Intents.all())
 bot=commands.Bot(command_prefix='!',intents=discord.Intents.all())
 
 ### CHANGE DISCORD ACTIVITY AND SETUP DATABASE FOR STARBOARD ###
@@ -37,14 +31,20 @@ bot=commands.Bot(command_prefix='!',intents=discord.Intents.all())
 @bot.event
 async def on_ready():
     await bot.change_presence(activity=discord.Activity(type=discord.ActivityType.listening,name="Peter Hammill"))
-    setattr(bot,"db",await aiosqlite.connect('starboard.db'))
+    # database for starboard
+    setattr(bot,"star_db",await aiosqlite.connect('starboard.db'))
     await asyncio.sleep(2)
-    async with bot.db.cursor() as cursor:
+    async with bot.star_db.cursor() as cursor:
         await cursor.execute("CREATE TABLE IF NOT EXISTS starSetup (starLimit INTEGER, channel INTEGER, guild INTEGER)")
-    await bot.db.commit()
+    await bot.star_db.commit()
     for guild in bot.guilds:
         if guild.name==GUILD:
             break
+    # database for levels
+    setattr(bot,"lvl_db",await aiosqlite.connect('level.db'))
+    await asyncio.sleep(3)
+    async with bot.lvl_db.cursor() as cursor:
+        await cursor.execute("CREATE TABLE IF NOT EXISTS levels (level INTEGER, xp INTEGER, user INTEGER, guild INTEGER)")
 
     print(f'{bot.user} is connected to the following guild:\n'f'{guild.name} (id: {guild.id})'    )
 
@@ -78,7 +78,7 @@ async def on_raw_reaction_add(payload):
     message=await channel.fetch_message(payload.message_id)
 
     if emoji.name=="⭐":
-        async with bot.db.cursor() as cursor:
+        async with bot.star_db.cursor() as cursor:
             await cursor.execute("SELECT starLimit, channel FROM starSetup WHERE guild = ?",(guild.id,))
             data=await cursor.fetchone()
             if data:
@@ -104,7 +104,7 @@ async def setup(ctx):
 @setup.command()
 @commands.has_permissions(manage_guild=True)
 async def channel(ctx,channel:discord.TextChannel):
-    async with bot.db.cursor()as cursor:
+    async with bot.star_db.cursor()as cursor:
         await cursor.execute("SELECT channel FROM starSetup WHERE guild = ?",(ctx.guild.id,))
         channelData=await cursor.fetchone()
         if channelData:
@@ -116,12 +116,12 @@ async def channel(ctx,channel:discord.TextChannel):
         else:
             await cursor.execute("INSERT INTO starSetup VALUES (?,?,?)",(5,channel.id,ctx.guild.id,))
             await ctx.send(f"{channel.mention} is now the starboard channel!")
-    await bot.db.commit()
+    await bot.star_db.commit()
 
 @setup.command()
 @commands.has_permissions(manage_guild=True)
 async def stars(ctx,star:int):
-    async with bot.db.cursor()as cursor:
+    async with bot.star_db.cursor()as cursor:
         await cursor.execute("SELECT starLimit FROM starSetup WHERE guild = ?",(ctx.guild.id,))
         starData=await cursor.fetchone()
         if starData:
@@ -133,13 +133,108 @@ async def stars(ctx,star:int):
         else:
             await cursor.execute("INSERT INTO starSetup VALUES (?,?,?)",(star,0,ctx.guild.id,))
             await ctx.send(f"{star} is now the star limit!")
-    await bot.db.commit()
+    await bot.star_db.commit()
 
 @bot.event
 async def on_command_error(ctx,error):
     em=discord.Embed(title="Error",description=f"```{error}```")
     await ctx.send(embed=em,delete_after=90)
     return
+
+### LEVEILING STUFF :D ###
+
+@bot.event
+async def on_message(message):
+    if message.author.bot:
+        return
+    author=message.author
+    guild=message.guild
+    async with bot.lvl_db.cursor() as cursor:
+        await cursor.execute("SELECT xp FROM levels WHERE user = ? AND guild = ?",(author.id,guild.id,))
+        xp=await cursor.fetchone()
+        await cursor.execute("SELECT level FROM levels WHERE user = ? AND guild = ?",(author.id,guild.id,))
+        level=await cursor.fetchone()
+
+        if not xp or not level:
+            await cursor.execute("INSERT INTO levels (level, xp, user, guild) VALUES (?, ?, ?, ?)",(0,0,author.id,guild.id,))
+
+        try:
+            xp=xp[0]
+            level=level[0]
+        except TypeError:
+            xp=0
+            level=0
+
+        if level<5:
+            xp+=random.randint(1,3)
+            await cursor.execute("UPDATE levels SET xp = ? WHERE user = ? AND guild = ?",(xp,author.id,guild.id,))
+        else:
+            rand=random.randint(1,(level//4))
+            if rand==1:
+                xp+=random.randint(1,3)
+                await cursor.execute("UPDATE levels SET xp = ? WHERE user = ? AND guild = ?",(xp,author.id,guild.id,))
+        if xp>=100:
+            level+=1
+            await cursor.execute("UPDATE levels SET level = ? WHERE user = ? AND guild = ?",(level,author.id,guild.id,))
+            await cursor.execute("UPDATE levels SET xp = ? WHERE user = ? AND guild = ?",(0,author.id,guild.id,))
+            await message.channel.send(f"{author.mention} has leveled up to level **{level}**!")
+    await bot.lvl_db.commit()
+    await bot.process_commands(message)
+
+@bot.command(aliseses=['lvl','rank','r'])
+async def level(ctx,member:discord.Member=None):
+    if member is None:
+        member=ctx.author
+    async with bot.lvl_db.cursor() as cursor:
+        await cursor.execute("SELECT xp FROM levels WHERE user = ? AND guild = ?",(member.id,ctx.guild.id,))
+        xp=await cursor.fetchone()
+        await cursor.execute("SELECT level FROM levels WHERE user = ? AND guild = ?",(member.id,ctx.guild.id,))
+        level=await cursor.fetchone()
+
+        if not xp or not level:
+            await cursor.execute("INSERT INTO levels (level, xp, user, guild) VALUES (?, ?, ?, ?)",(0,0,member.id,ctx.guild.id,))
+
+        try:
+            xp=xp[0]
+            level=level[0]
+        except TypeError:
+            xp=0
+            level=0
+
+    user_data={"name":f"{member.name}","xp":xp,"level":level,"next_level_xp":100,"percentage":xp,}
+
+    background=Editor(Canvas((720,300),color="#282828"))
+    profile_picture=await load_image_async(str(member.avatar.url))
+    profile=Editor(profile_picture).resize((150,150)).circle_image()
+
+    poppins=Font.poppins(size=40)
+    poppins_small=Font.poppins(size=30)
+
+    background.paste(profile,(30,30))
+
+    background.rectangle((30,220),width=650,height=40,color="#fff")
+    background.bar((30,220),max_width=650,height=40,percentage=user_data["percentage"],color="#bf00fe",)
+    background.text((200,40),user_data["name"],font=poppins,color="#fff")
+
+    background.rectangle((200,100),width=350,height=2,fill="#fff")
+    background.text((200,130),f"level - {user_data['level']} | XP - {user_data['xp']}/{user_data['next_level_xp']}",font=poppins_small,color="#fff")
+    file=discord.File(fp=background.image_bytes,filename="levelcard.png")
+    await ctx.send(file=file)
+
+@bot.command(aliases=["lb","lvlboard"])
+async def leaderboard(ctx):
+    async with bot.lvl_db.cursor() as cursor:
+        await cursor.execute("SELECT level, xp, user FROM levels WHERE guild = ? ORDER BY level DESC, xp DESC LIMIT 10",(ctx.guild.id,))
+        data=await cursor.fetchall()
+        if data:
+            em=discord.Embed(title="Leveling Leaderboard")
+            count=0
+            for table in data:
+                count+=1
+                user=ctx.guild.get_member(table[2])
+                em.add_field(name=f"{count}. {user.name}",value=f"Level: **{table[0]}** | XP: **{table[1]}**",inline=False)
+            return await ctx.send(embed=em)
+        return await ctx.send("There are no users stored in the leaderboard")
 
 ### RULES COMMAND ###
 
