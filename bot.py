@@ -87,13 +87,13 @@ async def on_raw_reaction_add(payload):
                 for reaction in message.reactions:
                     if reaction.emoji=="⭐":
                         if reaction.count>=starData:
-                            embed=discord.Embed(title="New Starboard Message",description=f"{message.content}")
+                            embed=discord.Embed(title="New Starboard Message",description=f"{message.content}") # try change to instead be the amount of reactions, this seems redundant
                             try:
                                 embed.set_image(url=message.attachments[0].url)
                             except:
                                 pass
-                            embed.set_author(name="Message Link",url=message.jump_url, icon_url=message.author.avatar.url)
-                            embed.set_footer(text=f"Message ID: {message.id} | Author: {message.author.name}")
+                            embed.set_author(name=f"{message.author.name}",icon_url=message.author.avatar.url)
+                            embed.set_footer(text=f"Message ID: {message.id}")
                             await channelData.send(embed=embed)
 
 @bot.group()
