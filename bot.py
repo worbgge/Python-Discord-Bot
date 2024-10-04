@@ -33,7 +33,7 @@ async def on_ready():
     await bot.change_presence(activity=discord.Activity(type=discord.ActivityType.listening,name="Peter Hammill"))
     # database for starboard
     setattr(bot,"star_db",await aiosqlite.connect('starboard.db'))
-    await asyncio.sleep(2)
+    await asyncio.sleep(3)
     async with bot.star_db.cursor() as cursor:
         await cursor.execute("CREATE TABLE IF NOT EXISTS starSetup (starLimit INTEGER, channel INTEGER, guild INTEGER)")
     await bot.star_db.commit()
@@ -45,6 +45,13 @@ async def on_ready():
     await asyncio.sleep(3)
     async with bot.lvl_db.cursor() as cursor:
         await cursor.execute("CREATE TABLE IF NOT EXISTS levels (level INTEGER, xp INTEGER, user INTEGER, guild INTEGER)")
+    await bot.lvl_db.commit()
+    # database for rym/topster
+    setattr(bot,"rym_topster_db",await aiosqlite.connect('rym_topster.db'))
+    await asyncio.sleep(3)
+    async with bot.rym_topster_db.cursor() as cursor:
+        await cursor.execute("CREATE TABLE IF NOT EXISTS users (id INTEGER PRIMARY KEY, topster_link TEXT, rym_link TEXT)")
+    await bot.rym_topster_db.commit()
 
     print(f'{bot.user} is connected to the following guild:\n'f'{guild.name} (id: {guild.id})'    )
 
@@ -177,6 +184,7 @@ async def on_message(message):
             level+=1
             await cursor.execute("UPDATE levels SET level = ? WHERE user = ? AND guild = ?",(level,author.id,guild.id,))
             await cursor.execute("UPDATE levels SET xp = ? WHERE user = ? AND guild = ?",(0,author.id,guild.id,))
+            channel=bot.get_channel(739300134734790785)
             await message.channel.send(f"{author.mention} has leveled up to level **{level}**!")
     await bot.lvl_db.commit()
     await bot.process_commands(message)
@@ -237,9 +245,70 @@ async def leaderboard(ctx):
             return await ctx.send(embed=em)
         return await ctx.send("There are no users stored in the leaderboard")
 
-### RULES COMMAND ###
+### TOPSTER COMMAND ###
+
+@bot.command(aliases=["settop", "setopster", "setop"])
+async def settopster(ctx):
+    if ctx.message.attachments:
+        for attachment in ctx.message.attachments:
+            if attachment.content_type.startswith('image/'):
+                topster_link=attachment.url
+                try:
+                    async with bot.rym_topster_db.execute("SELECT * FROM users WHERE id = ?",(ctx.author.id,)) as cursor:
+                        if await cursor.fetchone() is not None:
+                            await bot.rym_topster_db.execute("UPDATE users SET topster_link = ? WHERE id = ?",(topster_link, ctx.author.id))
+                        else:
+                            await bot.rym_topster_db.execute("INSERT INTO users (id, topster_link) VALUES (?, ?)", (ctx.author.id, topster_link))
+                    await bot.rym_topster_db.commit()
+                    await ctx.send("Topster added to database!")
+                except Exception as e:
+                    print(f"Error while executing database command: {e}")
+                    await ctx.send("An error occurred while adding the Topster link.")
+                return
+            else:
+                    await ctx.send("Please upload an image with the command.")
+                    return
+    else:
+        await ctx.send("Please upload an image with the command.")
+
+@bot.command(aliases=["gettop", "getopster", "gettopster", "top"])
+async def topster(ctx):
+    async with bot.rym_topster_db.execute("SELECT topster_link FROM users WHERE id = ?",(ctx.author.id,)) as cursor:
+        row=await cursor.fetchone()
+        if row and row[0]:
+            await ctx.send(f"{row[0]}")
+        else:
+            await ctx.send("No topster link found for you")
+
+### RYM COMMAND ###
 
 @bot.command()
+async def setrym(ctx,rym_link:str):
+    try:
+        async with bot.rym_topster_db.execute("SELECT * FROM users WHERE id = ?",(ctx.author.id,)) as cursor:
+            if await cursor.fetchone() is not None:
+                await bot.rym_topster_db.execute("UPDATE users SET rym_link = ? WHERE id = ?",(rym_link, ctx.author.id))
+            else:
+                await bot.rym_topster_db.execute("INSERT INTO users (id, rym_link) VALUES (?, ?)",(ctx.author.id,rym_link))
+        await bot.rym_topster_db.commit()
+        await ctx.send("RYM link added to database!")
+    except Exception as e:
+        print(f"Error while executing database command: {e}")
+        await ctx.send("An error occurred while adding the RYM link.")
+    return
+
+@bot.command(aliases=["getrym"])
+async def rym(ctx):
+    async with bot.rym_topster_db.execute("SELECT rym_link FROM users WHERE id = ?",(ctx.author.id,)) as cursor:
+        row=await cursor.fetchone()
+        if row and row[0]:
+            await ctx.send(f"Your RYM profile: {row[0]}")
+        else:
+            await ctx.send("No RYM link found for you!")
+
+### RULES COMMAND ###
+
+@bot.command(aliases=["info"])
 async def rules(ctx):
     embed=discord.Embed(title="Rules")
     embed.set_author(name="Fish Groove Mod Team",icon_url="https://cdn.discordapp.com/attachments/676084092269363230/828073160791425024/FG_XTC_English_Settlemnt_loop.gif")
