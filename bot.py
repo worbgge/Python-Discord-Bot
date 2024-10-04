@@ -181,7 +181,7 @@ async def on_message(message):
     await bot.lvl_db.commit()
     await bot.process_commands(message)
 
-@bot.command(aliseses=['lvl','rank','r'])
+@bot.command(aliases=['lvl','rank','r'])
 async def level(ctx,member:discord.Member=None):
     if member is None:
         member=ctx.author
@@ -212,12 +212,13 @@ async def level(ctx,member:discord.Member=None):
 
     background.paste(profile,(30,30))
 
-    background.rectangle((30,220),width=650,height=40,color="#fff")
-    background.bar((30,220),max_width=650,height=40,percentage=user_data["percentage"],color="#bf00fe",)
-    background.text((200,40),user_data["name"],font=poppins,color="#fff")
+    background.rectangle((30,200),width=650,height=40,color="#fff")
+    background.bar((30,200),max_width=650,height=41,percentage=user_data["percentage"],color="#C3B1E0",)
+    background.text((200,100),user_data["name"],font=poppins,color="#fff")
 
-    background.rectangle((200,100),width=350,height=2,fill="#fff")
-    background.text((200,130),f"level - {user_data['level']} | XP - {user_data['xp']}/{user_data['next_level_xp']}",font=poppins_small,color="#fff")
+    #background.rectangle((200,100),width=350,height=2,fill="#fff")
+    background.text((600,100),f"lvl. {user_data['level']}",font=poppins,color="#fff")
+    background.text((300,255),f"{user_data['xp']}/{user_data['next_level_xp']}",font=poppins_small,color="#fff")
     file=discord.File(fp=background.image_bytes,filename="levelcard.png")
     await ctx.send(file=file)
 
